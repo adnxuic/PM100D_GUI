@@ -74,14 +74,20 @@ class PlotWidget(QWidget):
         
     def add_device_data(self, device_id, time_point, power_value):
         """添加设备数据点"""
+        print(f"PlotWidget: 接收数据 - 设备={device_id}, 时间={time_point}, 功率={power_value:.6e}")
+        
         if device_id not in self.power_data:
             self.power_data[device_id] = []
+            print(f"PlotWidget: 为设备 {device_id} 创建新的数据列表")
             
         # 确保时间数据同步
         if len(self.time_data) <= len(self.power_data[device_id]):
             self.time_data.append(time_point)
+            print(f"PlotWidget: 添加时间点，当前时间数据长度: {len(self.time_data)}")
             
         self.power_data[device_id].append(power_value)
+        print(f"PlotWidget: 设备 {device_id} 数据点数: {len(self.power_data[device_id])}")
+        print(f"PlotWidget: 当前所有设备: {list(self.power_data.keys())}")
         
         # 更新图形
         self.update_plot()
@@ -114,11 +120,19 @@ class PlotWidget(QWidget):
     def clear_device_data(self, device_id):
         """清除指定设备的数据"""
         if device_id in self.power_data:
+            data_count = len(self.power_data[device_id])
             del self.power_data[device_id]
+            print(f"PlotWidget: 清除设备 {device_id} 的数据，共删除 {data_count} 个数据点")
             self.update_plot()
             
     def clear_all_data(self):
         """清除所有数据"""
+        total_devices = len(self.power_data)
+        total_time_points = len(self.time_data)
+        total_data_points = sum(len(data) for data in self.power_data.values())
+        
         self.time_data.clear()
         self.power_data.clear()
+        
+        print(f"PlotWidget: 清除所有数据 - 设备数: {total_devices}, 时间点数: {total_time_points}, 总数据点数: {total_data_points}")
         self.update_plot()

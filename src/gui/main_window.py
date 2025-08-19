@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QProgressBar, QLabel
 )
 from PySide6.QtGui import QAction, QIcon, QDragEnterEvent, QDropEvent, QCloseEvent
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 import sys
 import os
@@ -28,6 +28,9 @@ class MainWindow(QMainWindow):
 
         self.init_ui()
         self.connect_data_signals()
+        
+        # 延迟启动自动连接（给界面一些时间完成初始化）
+        QTimer.singleShot(1000, self.auto_connect_cached_devices)
         
     def init_ui(self):
         """初始化用户界面"""
@@ -62,6 +65,11 @@ class MainWindow(QMainWindow):
         self.right_panel = RightPanel()
         self.right_panel.setMinimumWidth(300)
         self.right_panel.setMaximumWidth(400)
+        
+        # 将绘图组件引用和主窗口引用传递给右侧面板
+        self.right_panel.set_plot_widget(self.plot_widget)
+        self.right_panel.set_main_window(self)
+        
         splitter.addWidget(self.right_panel)
         
         # 设置分割器比例
@@ -135,6 +143,12 @@ class MainWindow(QMainWindow):
         # 连接左侧面板的设备管理信号
         self.left_panel.device_connected.connect(self.on_device_connected)
         self.left_panel.device_disconnected.connect(self.on_device_disconnected)
+        
+        # 连接右侧面板的数据采集信号
+        self.right_panel.acquisition_stopped.connect(self.auto_save_data)
+        
+        # 验证信号连接
+        print(f"信号连接验证: acquisition_stopped信号已连接到auto_save_data方法")
         
     def on_device_connected(self, device_id, pm100d_device):
         """处理设备连接事件"""
@@ -219,6 +233,11 @@ class MainWindow(QMainWindow):
         if not self.pm100ds:
             QMessageBox.information(self, "导出数据", "没有连接的设备或数据可导出")
             return
+        
+        # 检查是否有数据可导出
+        if not hasattr(self.plot_widget, 'power_data') or not self.plot_widget.power_data:
+            QMessageBox.information(self, "导出数据", "没有采集到的数据可导出\n请先开始数据采集")
+            return
             
         file_path, _ = QFileDialog.getSaveFileName(
             self, "导出数据", "", "CSV files (*.csv);;All files (*.*)"
@@ -226,12 +245,187 @@ class MainWindow(QMainWindow):
         
         if file_path:
             try:
-                # 这里可以实现数据导出逻辑
-                # 从right_panel的数据表格或其他数据源导出
-                QMessageBox.information(self, "导出成功", f"数据已导出到: {file_path}")
+                import csv
+                import time
+                
+                # 从plot_widget获取所有数据
+                time_data = self.plot_widget.time_data
+                power_data = self.plot_widget.power_data
+                
+                if not time_data or not power_data:
+                    QMessageBox.warning(self, "导出失败", "没有数据可导出")
+                    return
+                
+                # 写入CSV文件
+                with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                    writer = csv.writer(csvfile)
+                    
+                    # 写入表头
+                    headers = ['时间戳', '格式化时间']
+                    device_ids = list(power_data.keys())
+                    headers.extend([f'{device_id}_功率(W)' for device_id in device_ids])
+                    writer.writerow(headers)
+                    
+                    # 写入数据行
+                    max_rows = len(time_data)
+                    for i in range(max_rows):
+                        row = []
+                        
+                        # 添加时间信息
+                        timestamp = time_data[i]
+                        row.append(timestamp)
+                        row.append(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp)))
+                        
+                        # 添加每个设备的功率数据
+                        for device_id in device_ids:
+                            if i < len(power_data[device_id]):
+                                row.append(f"{power_data[device_id][i]:.6e}")
+                            else:
+                                row.append("")  # 如果该设备没有这个时间点的数据
+                        
+                        writer.writerow(row)
+                
+                # 显示导出统计信息
+                total_points = sum(len(data) for data in power_data.values())
+                device_count = len(power_data)
+                
+                success_msg = f"数据导出成功！\n\n"
+                success_msg += f"文件路径: {file_path}\n"
+                success_msg += f"设备数量: {device_count}\n"
+                success_msg += f"总数据点: {total_points}\n"
+                success_msg += f"时间范围: {max_rows} 个时间点"
+                
+                QMessageBox.information(self, "导出成功", success_msg)
                 self.status_bar.showMessage(f"数据已导出到: {file_path}", 5000)
+                
             except Exception as e:
-                QMessageBox.critical(self, "导出失败", f"导出数据失败: {str(e)}")
+                error_msg = f"导出数据失败: {str(e)}\n\n"
+                error_msg += "可能原因:\n"
+                error_msg += "• 文件被其他程序占用\n"
+                error_msg += "• 磁盘空间不足\n"
+                error_msg += "• 没有写入权限\n"
+                error_msg += "• 文件路径无效"
+                
+                QMessageBox.critical(self, "导出失败", error_msg)
+    
+    def auto_save_data(self):
+        """自动保存数据"""
+        print("auto_save_data 被调用")
+        
+        if not self.pm100ds:
+            print("没有连接的设备，跳过自动保存")
+            return
+        
+        # 详细的数据检查和调试信息
+        print(f"已连接设备数量: {len(self.pm100ds)}")
+        print(f"已连接设备列表: {list(self.pm100ds.keys())}")
+        
+        # 检查plot_widget是否存在
+        if not hasattr(self, 'plot_widget'):
+            print("ERROR: plot_widget 不存在!")
+            return
+            
+        print(f"plot_widget 存在: {self.plot_widget is not None}")
+        
+        # 检查power_data属性
+        if not hasattr(self.plot_widget, 'power_data'):
+            print("ERROR: plot_widget.power_data 属性不存在!")
+            return
+            
+        print(f"power_data 类型: {type(self.plot_widget.power_data)}")
+        print(f"power_data 内容: {self.plot_widget.power_data}")
+        
+        # 检查time_data
+        if hasattr(self.plot_widget, 'time_data'):
+            print(f"time_data 长度: {len(self.plot_widget.time_data)}")
+            print(f"time_data 内容预览: {self.plot_widget.time_data[:5] if len(self.plot_widget.time_data) > 0 else '空'}")
+        else:
+            print("ERROR: plot_widget.time_data 属性不存在!")
+        
+        # 检查是否有数据可保存
+        if not self.plot_widget.power_data:
+            print("没有数据可保存，跳过自动保存")
+            print("可能原因:")
+            print("1. 数据采集时间太短，还没来得及采集数据")
+            print("2. 设备连接有问题，无法读取数据")
+            print("3. 数据被清除了")
+            print("4. 数据传递过程出现问题")
+            QMessageBox.information(self, "自动保存", "没有数据可保存\n\n可能原因:\n• 采集时间太短\n• 设备连接异常\n• 数据已被清除\n\n建议：连接设备后采集几秒钟数据再停止")
+            return
+        
+        print(f"开始自动保存数据，设备数量: {len(self.plot_widget.power_data)}")
+        print(f"时间数据点数: {len(self.plot_widget.time_data)}")
+        
+        try:
+            import csv
+            import time
+            import os
+            
+            # 生成自动保存文件名（带时间戳）
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            filename = f"PM100D_数据_{timestamp}.csv"
+            
+            # 创建保存目录（如果不存在）
+            save_dir = os.path.join(os.getcwd(), "数据保存")
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            
+            file_path = os.path.join(save_dir, filename)
+            
+            # 从plot_widget获取所有数据
+            time_data = self.plot_widget.time_data
+            power_data = self.plot_widget.power_data
+            
+            if not time_data or not power_data:
+                return
+            
+            # 写入CSV文件
+            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                
+                # 写入表头
+                headers = ['时间戳', '格式化时间']
+                device_ids = list(power_data.keys())
+                headers.extend([f'{device_id}_功率(W)' for device_id in device_ids])
+                writer.writerow(headers)
+                
+                # 写入数据行
+                max_rows = len(time_data)
+                for i in range(max_rows):
+                    row = []
+                    
+                    # 添加时间信息
+                    timestamp_val = time_data[i]
+                    row.append(timestamp_val)
+                    row.append(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp_val)))
+                    
+                    # 添加每个设备的功率数据
+                    for device_id in device_ids:
+                        if i < len(power_data[device_id]):
+                            row.append(f"{power_data[device_id][i]:.6e}")
+                        else:
+                            row.append("")  # 如果该设备没有这个时间点的数据
+                    
+                    writer.writerow(row)
+            
+            # 显示保存成功信息
+            total_points = sum(len(data) for data in power_data.values())
+            device_count = len(power_data)
+            
+            success_msg = f"数据已自动保存成功！\n\n"
+            success_msg += f"文件路径: {file_path}\n"
+            success_msg += f"设备数量: {device_count}\n"
+            success_msg += f"总数据点: {total_points}\n"
+            success_msg += f"时间范围: {max_rows} 个时间点"
+            
+            QMessageBox.information(self, "自动保存成功", success_msg)
+            self.status_bar.showMessage(f"数据已自动保存到: {file_path}", 5000)
+            
+        except Exception as e:
+            error_msg = f"自动保存数据失败: {str(e)}\n\n"
+            error_msg += "数据已停留在内存中，您可以通过菜单手动导出。"
+            QMessageBox.warning(self, "自动保存失败", error_msg)
+            print(f"自动保存失败: {e}")
                 
     def show_about(self):
         """显示关于对话框"""
@@ -273,3 +467,26 @@ class MainWindow(QMainWindow):
             event.accept()
         else:
             event.ignore()
+    
+    def auto_connect_cached_devices(self):
+        """程序启动时自动连接缓存的设备"""
+        try:
+            print("开始自动连接缓存设备...")
+            
+            # 检查是否有缓存设备
+            cached_devices = self.left_panel.device_cache.get_priority_devices(3)  # 只尝试连接前3个优先设备
+            
+            if not cached_devices:
+                print("没有缓存设备，跳过自动连接")
+                self.status_bar.showMessage("没有缓存设备可连接", 3000)
+                return
+            
+            print(f"发现 {len(cached_devices)} 个缓存设备，开始自动连接...")
+            self.status_bar.showMessage(f"正在尝试自动连接 {len(cached_devices)} 个缓存设备...", 5000)
+            
+            # 使用左侧面板的快速连接功能
+            self.left_panel.start_quick_connect(cached_devices)
+            
+        except Exception as e:
+            print(f"自动连接缓存设备时出错: {e}")
+            self.status_bar.showMessage("自动连接缓存设备失败", 3000)

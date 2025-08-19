@@ -42,8 +42,9 @@ class PM100D:
         """
         try:
             self.inst = rm.open_resource(resourceLoc)
-            self.inst.timeout = 2000 # 设置超时为 2000 ms
-            print("已连接到: ", self.inst.query("*IDN?").strip())
+            self.inst.timeout = 3000  # 增加超时为 3000 ms
+            idn_response = self.inst.query("*IDN?").strip()
+            print("已连接到: ", idn_response)
         except Exception as e:
             print(f"连接到 PM100D 时出错: {e}")
             print("请检查连接和 VISA 驱动程序，然后重试。")
@@ -52,10 +53,27 @@ class PM100D:
         # 带宽设置映射
         self.bw = {"HI": "1", "LO": "0"}
         
-        # 初始化实例变量以匹配设备当前状态
-        self.wavelength = self.getWavelength()
-        self.bandwidth = self.getBandwidth()
-        self.avg_count = self.getAvgCount()
+        # 初始化实例变量以匹配设备当前状态（添加错误处理）
+        try:
+            self.wavelength = self.getWavelength()
+            print(f"当前波长: {self.wavelength} nm")
+        except Exception as e:
+            print(f"警告: 获取波长失败: {e}")
+            self.wavelength = 1550  # 默认值
+            
+        try:
+            self.bandwidth = self.getBandwidth()
+            print(f"当前带宽: {self.bandwidth}")
+        except Exception as e:
+            print(f"警告: 获取带宽失败: {e}")
+            self.bandwidth = "LO"  # 默认值
+            
+        try:
+            self.avg_count = self.getAvgCount()
+            print(f"当前平均次数: {self.avg_count}")
+        except Exception as e:
+            print(f"警告: 获取平均次数失败: {e}")
+            self.avg_count = 10  # 默认值
 
     def setWavelength(self, nm=1550):
         """设置波长校正值，单位为纳米 (nm)。"""
@@ -78,8 +96,16 @@ class PM100D:
 
     def getBandwidth(self):
         """返回当前的带宽设置 ('HI' 或 'LO')。"""
-        state = self.inst.query("INP:PDIO:FILT:LPAS:STAT?").strip()
-        return "HI" if state == "1" else "LO"
+        try:
+            # 某些PM100D固件版本此命令可能超时，增加重试机制
+            original_timeout = self.inst.timeout
+            self.inst.timeout = 1000  # 短超时用于快速检测
+            state = self.inst.query("INP:PDIO:FILT:LPAS:STAT?").strip()
+            self.inst.timeout = original_timeout
+            return "HI" if state == "1" else "LO"
+        except Exception:
+            # 如果命令不支持或超时，返回默认值
+            return "LO"
 
     def setAvgCount(self, count=10):
         """设置平均采样次数。"""

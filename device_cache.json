@@ -1,0 +1,38 @@
+{
+  "devices": [
+    {
+      "resource": "USB0::0x1313::0x8078::P0014722::INSTR",
+      "idn": "Thorlabs,PM100D,P0014722,2.4.0",
+      "first_connected": 1755603147.5023148,
+      "last_connected": 1755604153.1366405,
+      "connection_count": 1,
+      "success_rate": 1.0,
+      "additional_info": {
+        "sensor_name": "S120C",
+        "sensor_serial": "16122036",
+        "sensor_type": "1",
+        "connection_method": "manual_search"
+      },
+      "total_attempts": 6,
+      "priority_score": 1.0
+    },
+    {
+      "resource": "USB0::0x1313::0x8078::P0014000::INSTR",
+      "idn": "Thorlabs,PM100D,P0014000,2.4.0",
+      "first_connected": 1755603671.54628,
+      "last_connected": 1755604154.1641338,
+      "connection_count": 1,
+      "success_rate": 1.0,
+      "additional_info": {
+        "sensor_name": "S120C",
+        "sensor_serial": "210520228",
+        "sensor_type": "1",
+        "connection_method": "manual_search"
+      },
+      "total_attempts": 4,
+      "priority_score": 1.0
+    }
+  ],
+  "last_updated": 1755604154.1641338,
+  "version": "1.0"
+}
